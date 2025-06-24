@@ -1,0 +1,2099 @@
+                                <div class="p-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <h2 class="text-2xl font-bold text-blog-text">
+                                            文章列表
+                                            <span v-if="selectedCategory" class="text-blog-accent">- {{ selectedCategory }}</span>
+                                            <span v-if="selectedTag" class="text-blog-accent">- #{{ selectedTag }}</span>
+                                        </h2>
+                                        <div class="flex items-center space-x-4">
+                                            <!-- 刷新按钮 -->
+                                            <button @click="refreshArticles" 
+                                                    :disabled="isLoadingArticles"
+                                                    class="p-2 bg-blog-secondary bg-opacity-20 text-blog-secondary rounded-lg hover:bg-opacity-30 transition-colors disabled:opacity-50"
+                                                    title="刷新文章列表">
+                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                                </svg>
+                                            </button>
+                                            <!-- 搜索框 -->
+                                            <div class="relative">
+                                                <input v-model="searchQuery" 
+                                                       type="text" 
+                                                       placeholder="搜索文章..."
+                                                       class="bg-blog-card border border-blog-border rounded-lg px-4 py-2 text-blog-text placeholder-gray-400 focus:outline-none focus:border-blog-accent">
+                                                <svg class="absolute right-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                                </svg>
+                                            </div>
+                                            <!-- 清除筛选按钮 -->
+                                            <button v-if="selectedCategory || selectedTag || searchQuery" 
+                                                    @click="clearFilters"
+                                                    class="px-4 py-2 bg-blog-secondary text-white rounded-lg hover:bg-opacity-80 transition-colors">
+                                                清除筛选
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- GitHub仓库信息 -->
+                                    <div v-if="repoInfo" class="mb-6 p-4 bg-blog-card rounded-lg border border-blog-border">
+                                        <div class="flex items-center space-x-3">
+                                            <svg class="w-5 h-5 text-blog-accent" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 0C4.477 0 0 4.484 0 10.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.942.359.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0020 10.017C20 4.484 15.522 0 10 0z"></path>
+                                            </svg>
+                                            <div>
+                                                <div class="text-blog-text font-medium">{{ repoInfo.full_name }}</div>
+                                                <div class="text-gray-400 text-sm">{{ repoInfo.description || '文章来源仓库' }}</div>
+                                            </div>
+                                            <div class="ml-auto flex items-center space-x-4 text-sm text-gray-400">
+                                                <span>⭐ {{ repoInfo.stargazers_count }}</span>
+                                                <span>🍴 {{ repoInfo.forks_count }}</span>
+                                            </div>
+                                        </div>
+                                    </div>        const app = createApp({
+            setup() {
+                const currentRoute = ref('home');
+                const selectedArticle = ref(null);
+                const selectedCategory = ref('');
+                const selectedTag = ref('');
+                const isMobileMenuOpen = ref(false);
+                const currentDate = new Date();
+                const currentMonth = ref(currentDate.getMonth());
+                const currentYear = ref(currentDate.getFullYear());
+                
+                // 分页相关
+                const currentPage = ref(1);
+                const pageSize = ref(6);
+                const searchQuery = ref('');
+                
+                // GitHub仓库配置
+                const githubConfig = {
+                    owner: 'jhosion', // 您的GitHub用户名
+                    repo: 'blog-articles', // 文章仓库名（建议创建）
+                    branch: 'main', // 分支名
+                    articlesPath: 'articles', // 文章目录路径
+                    indexFile: 'articles.json', // 可选：文章索引文件
+                    token: null // 可选：GitHub访问令牌（私有仓库需要）
+                };
+                
+                // 文章管理器
+                const articleManager = new GitHubArticleManager(githubConfig);
+                const articles = ref([]);
+                const isLoadingArticles = ref(false);
+                const repoInfo = ref(null);
+
+                // 初始化文章数据
+                onMounted(async () => {
+                    isLoadingArticles.value = true;
+                    try {
+                        await articleManager.initialize();
+                        articles.value = articleManager.articles;
+                        
+                        // 获取仓库信息（可选）
+                        repoInfo.value = await articleManager.getRepoInfo();
+                        
+                        console.log('📚 博客初始化完成');
+                    } catch (error) {
+                        console.error('博客初始化失败:', error);
+                    } finally {
+                        isLoadingArticles.value = false;
+                    }
+                });
+
+                // 获取所有分类
+                const categories = computed(() => {
+                    const cats = [...new Set(articles.value.map(article => article.category))];
+                    return cats.map(cat => ({
+                        name: cat,
+                        count: articles.value.filter(article => article.category === cat).length
+                    }));
+                });
+
+                // 获取所有标签
+                const tags = computed(() => {
+                    const allTags = articles.value.flatMap(article => article.tags);
+                    const tagCounts = {};
+                    allTags.forEach(tag => {
+                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    });
+                    return Object.entries(tagCounts).map(([name, count]) => ({ name, count }));
+                });
+
+                    // 按标签过滤
+                    if (selectedTag.value) {
+                        filtered = filtered.filter(article => article.tags.includes(selectedTag.value));
+                    }
+                    
+                    // 按搜索关键词过滤
+                    if (searchQuery.value) {
+                        filtered = articleManager.searchArticles(searchQuery.value);
+                    }
+                    
+                    return filtered;
+                });
+
+                // 分页后的文章列表
+                const paginatedArticles = computed(() => {
+                    const start = (currentPage.value - 1) * pageSize.value;
+                    const end = start + pageSize.value;
+                    return filteredArticles.value.slice(start, end);
+                });
+
+                // 总页数
+                const totalPages = computed(() => {
+                    return Math.ceil(filteredArticles.value.length / pageSize.value);
+                });
+
+                // 切换路由
+                const navigateTo = (route) => {
+                    currentRoute.value = route;
+                    selectedArticle.value = null;
+                    selectedCategory.value = '';
+                    selectedTag.value = '';
+                    isMobileMenuOpen.value = false;
+                    currentPage.value = 1;
+                    searchQuery.value = '';
+                };
+
+                // 查看文章详情
+                const viewArticle = async (article) => {
+                    selectedArticle.value = { ...article, content: '# 正在加载文章内容...\n\n请稍候...' };
+                    currentRoute.value = 'article-detail';
+                    
+                    try {
+                        console.log(`📖 正在加载文章: ${article.title}`);
+                        
+                        // 优先使用预设内容，否则从GitHub加载
+                        let content = article.content;
+                        if (!content) {
+                            content = await articleManager.loadArticleContent(article.fileName || `article-${article.id}.md`);
+                        }
+                        
+                        selectedArticle.value.content = content;
+                        
+                        nextTick(() => {
+                            // 渲染Markdown内容
+                            const contentElement = document.querySelector('.markdown-content');
+                            if (contentElement && content) {
+                                contentElement.innerHTML = marked.parse(content);
+                            }
+                            initGitalk(article.id);
+                        });
+                    } catch (error) {
+                        console.error('加载文章失败:', error);
+                        selectedArticle.value.content = `# 文章加载失败\n\n**错误信息**: ${error.message}\n\n请检查网络连接或稍后重试。`;
+                        
+                        nextTick(() => {
+                            const contentElement = document.querySelector('.markdown-content');
+                            if (contentElement) {
+                                contentElement.innerHTML = marked.parse(selectedArticle.value.content);
+                            }
+                        });
+                    }
+                };
+
+                // 刷新文章列表
+                const refreshArticles = async () => {
+                    isLoadingArticles.value = true;
+                    try {
+                        await articleManager.refresh();
+                        articles.value = articleManager.articles;
+                        console.log('✅ 文章列表已刷新');
+                    } catch (error) {
+                        console.error('刷新失败:', error);
+                    } finally {
+                        isLoadingArticles.value = false;
+                    }
+                };
+
+                // 返回列表
+                const goBack = () => {
+                    selectedArticle.value = null;
+                    if (selectedCategory.value || selectedTag.value) {
+                        currentRoute.value = selectedCategory.value ? 'categories' : 'tags';
+                    } else {
+                        currentRoute.value = 'home';
+                    }
+                };
+
+                // 按分类筛选
+                const filterByCategory = (category) => {
+                    selectedCategory.value = category;
+                    selectedTag.value = '';
+                    currentRoute.value = 'articles';
+                    currentPage.value = 1;
+                };
+
+                // 按标签筛选
+                const filterByTag = (tag) => {
+                    selectedTag.value = tag;
+                    selectedCategory.value = '';
+                    currentRoute.value = 'articles';
+                    currentPage.value = 1;
+                };
+
+                // 清除筛选
+                const clearFilters = () => {
+                    selectedCategory.value = '';
+                    selectedTag.value = '';
+                    searchQuery.value = '';
+                    currentPage.value = 1;
+                };
+
+                // 切换页码
+                const goToPage = (page) => {
+                    currentPage.value = page;
+                };
+
+                // 切换移动端菜单
+                const toggleMobileMenu = () => {
+                    isMobileMenuOpen.value = !isMobileMenuOpen.value;
+                };
+
+                // 生成日历
+                const generateCalendar = () => {
+                    const year = currentYear.value;
+                    const month = currentMonth.value;
+                    const firstDay = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+                    const daysInMonth = lastDay.getDate();
+                    const startingDayOfWeek = firstDay.getDay();
+                    
+                    const calendar = [];
+                    let day = 1;
+                    
+                    for (let week = 0; week < 6; week++) {
+                        const weekDays = [];
+                        for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+                            if (week === 0 && dayOfWeek < startingDayOfWeek) {
+                                weekDays.push(null);
+                            } else if (day > daysInMonth) {
+                                weekDays.push(null);
+                            } else {
+                                // 获取农历信息
+                                const lunarInfo = lunarCalendar.solar2lunar(year, month + 1, day);
+                                weekDays.push({
+                                    day: day,
+                                    lunar: lunarInfo,
+                                    isToday: year === new Date().getFullYear() && 
+                                            month === new Date().getMonth() && 
+                                            day === new Date().getDate()
+                                });
+                                day++;
+                            }
+                        }
+                        calendar.push(weekDays);
+                        if (day > daysInMonth) break;
+                    }
+                    return calendar;
+                };
+
+                // 切换月份
+                const changeMonth = (delta) => {
+                    const newMonth = currentMonth.value + delta;
+                    if (newMonth < 0) {
+                        currentMonth.value = 11;
+                        currentYear.value--;
+                    } else if (newMonth > 11) {
+                        currentMonth.value = 0;
+                        currentYear.value++;
+                    } else {
+                        currentMonth.value = newMonth;
+                    }
+                };
+
+                // 切换年份
+                const changeYear = (delta) => {
+                    currentYear.value += delta;
+                };
+
+                // 回到今天
+                const goToToday = () => {
+                    const today = new Date();
+                    currentYear.value = today.getFullYear();
+                    currentMonth.value = today.getMonth();
+                };
+
+                const calendar = computed(() => generateCalendar());
+                const monthName = computed(() => {
+                    return new Date(currentYear.value, currentMonth.value).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
+                });
+
+                // 初始化 Gitalk
+                const initGitalk = (articleId) => {
+                    setTimeout(() => {
+                        const gitalkContainer = document.getElementById('gitalk-container');
+                        if (gitalkContainer) {
+                            gitalkContainer.innerHTML = '';
+                            
+                            // 使用您的Gitalk配置
+                            const gitalk = new Gitalk({
+                                clientID: 'Ov23liDOE2iuCyeWbyWD',
+                                clientSecret: '477a776c37148e77d1cd310edd12f74a4b2d9d21',
+                                repo: 'my-blog-comments-',
+                                owner: 'jhosion',
+                                admin: ['jhosion'],
+                                id: `article-${articleId}`,
+                                distractionFreeMode: false,
+                                theme: 'dark',
+                                language: 'zh-CN',
+                                perPage: 10,
+                                createIssueManually: false,
+                                enableHotKey: true,
+                                // 添加多个可能的回调URL（Gitalk会自动选择）
+                                // 这是一个临时解决方案
+                                proxy: getProxyIfNeeded()
+                            });
+                            
+                            try {
+                                gitalk.render('gitalk-container');
+                                console.log('✅ Gitalk评论系统初始化成功');
+                            } catch (error) {
+                                console.error('❌ Gitalk初始化失败:', error);
+                                
+                                // 提供更详细的错误信息和解决方案
+                                gitalkContainer.innerHTML = `
+                                    <div class="p-4 bg-yellow-900 bg-opacity-20 border border-yellow-600 rounded-lg">
+                                        <h4 class="text-yellow-400 font-medium mb-2">评论系统配置问题</h4>
+                                        <p class="text-gray-300 text-sm mb-3">当前访问地址: <code class="bg-black bg-opacity-30 px-2 py-1 rounded">${window.location.origin}</code></p>
+                                        
+                                        <div class="mb-3">
+                                            <p class="text-gray-300 text-sm font-medium">可能的解决方案：</p>
+                                            <ul class="text-gray-300 text-sm mt-2 space-y-1">
+                                                <li>• OAuth回调URL需要设置为: <code class="bg-black bg-opacity-30 px-2 py-1 rounded text-blue-300">${window.location.origin}</code></li>
+                                                <li>• 如果无法访问GitHub设置页面，尝试：</li>
+                                                <li class="ml-4">- 使用手机热点网络</li>
+                                                <li class="ml-4">- 清除浏览器缓存</li>
+                                                <li class="ml-4">- 尝试不同浏览器</li>
+                                            </ul>
+                                        </div>
+                                        
+                                        <div class="p-3 bg-blue-900 bg-opacity-20 border border-blue-600 rounded">
+                                            <p class="text-blue-300 text-sm font-medium">快速访问OAuth设置：</p>
+                                            <div class="mt-2 space-y-1">
+                                                <a href="https://github.com/settings/developers" target="_blank" class="text-blue-400 underline text-sm block">方法1: GitHub开发者设置</a>
+                                                <a href="https://github.com" target="_blank" class="text-blue-400 underline text-sm block">方法2: GitHub首页 → 头像 → Settings → Developer settings</a>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="mt-3 text-xs text-gray-400">
+                                            错误详情: ${error.message}
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        }
+                    }, 100);
+                };
+
+                // 根据环境决定是否需要代理
+                function getProxyIfNeeded() {
+                    const isLocalhost = window.location.hostname === 'localhost' || 
+                                       window.location.hostname === '127.0.0.1' ||
+                                       window.location.protocol === 'file:';
+                    
+                    // 本地环境可能需要代理
+                    if (isLocalhost) {
+                        return 'https://cors-anywhere.herokuapp.com/https://github.com/login/oauth/access_token';
+                    }
+                    
+                    // HTTPS环境通常不需要代理
+                    return undefined;
+                }
+
+                // 监听路由变化，重置分页
+                watch(currentRoute, () => {
+                    currentPage.value = 1;
+                });
+
+                return {
+                    currentRoute,
+                    selectedArticle,
+                    selectedCategory,
+                    selectedTag,
+                    isMobileMenuOpen,
+                    currentPage,
+                    pageSize,
+                    searchQuery,
+                    articles,
+                    filteredArticles,
+                    paginatedArticles,
+                    totalPages,
+                    categories,
+                    tags,
+                    navItems,
+                    sidebarLinks,
+                    calendar,
+                    monthName,
+                    isLoadingArticles,
+                    repoInfo,
+                    navigateTo,
+                    viewArticle,
+                    goBack,
+                    filterByCategory,
+                    filterByTag,
+                    clearFilters,
+                    goToPage,
+                    toggleMobileMenu,
+                    changeMonth,
+                    changeYear,
+                    goToToday,
+                    refreshArticles
+                };
+            },<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogicYarn - 个人博客</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gitalk/1.8.0/gitalk.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/gitalk/1.8.0/gitalk.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'blog-dark': '#1a1b26',
+                        'blog-darker': '#16161e',
+                        'blog-card': '#24283b',
+                        'blog-border': '#414868',
+                        'blog-text': '#c0caf5',
+                        'blog-accent': '#7aa2f7',
+                        'blog-secondary': '#bb9af7'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+        .nav-item {
+            transition: all 0.2s ease;
+        }
+        .nav-item:hover {
+            background-color: rgba(122, 162, 247, 0.1);
+            border-radius: 0.5rem;
+        }
+        .nav-item.active {
+            background-color: rgba(122, 162, 247, 0.2);
+            border-radius: 0.5rem;
+        }
+        .mobile-menu-enter-active, .mobile-menu-leave-active {
+            transition: transform 0.3s ease;
+        }
+        .mobile-menu-enter-from, .mobile-menu-leave-to {
+            transform: translateX(-100%);
+        }
+        
+        /* Markdown样式 */
+        .markdown-content {
+            line-height: 1.7;
+        }
+        .markdown-content h1 {
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 2rem 0 1rem 0;
+            color: #c0caf5;
+            border-bottom: 2px solid #414868;
+            padding-bottom: 0.5rem;
+        }
+        .markdown-content h2 {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 1.5rem 0 1rem 0;
+            color: #7aa2f7;
+        }
+        .markdown-content h3 {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin: 1.25rem 0 0.75rem 0;
+            color: #bb9af7;
+        }
+        .markdown-content p {
+            margin-bottom: 1rem;
+            color: #c0caf5;
+        }
+        .markdown-content ul, .markdown-content ol {
+            margin: 1rem 0;
+            padding-left: 1.5rem;
+            color: #c0caf5;
+        }
+        .markdown-content li {
+            margin-bottom: 0.5rem;
+        }
+        .markdown-content blockquote {
+            border-left: 4px solid #7aa2f7;
+            padding-left: 1rem;
+            margin: 1rem 0;
+            font-style: italic;
+            color: #a9b1d6;
+        }
+        .markdown-content code {
+            background-color: #24283b;
+            color: #7aa2f7;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: 'Fira Code', monospace;
+        }
+        .markdown-content pre {
+            background-color: #1a1b26;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        /* 日历样式 */
+        .calendar-day {
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        .calendar-day:hover {
+            background-color: rgba(122, 162, 247, 0.2);
+            transform: scale(1.05);
+        }
+        .calendar-day.today {
+            background-color: #7aa2f7;
+            color: #1a1b26;
+            font-weight: bold;
+        }
+        .calendar-controls button {
+            transition: all 0.2s ease;
+        }
+        .calendar-controls button:hover {
+            background-color: rgba(122, 162, 247, 0.2);
+            transform: scale(1.1);
+        }
+        
+        /* 农历提示框样式 */
+        .lunar-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #24283b;
+            border: 1px solid #414868;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .lunar-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #414868;
+        }
+        .calendar-day:hover .lunar-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        .gt-container {
+            color: #c0caf5 !important;
+        }
+        .gt-container .gt-header-textarea {
+            background-color: #24283b !important;
+            border-color: #414868 !important;
+            color: #c0caf5 !important;
+        }
+        .gt-container .gt-btn-public {
+            background-color: #7aa2f7 !important;
+            border-color: #7aa2f7 !important;
+        }
+        .gt-container .gt-comment-content {
+            background-color: #24283b !important;
+            border-color: #414868 !important;
+        }
+        .gt-container .gt-comment-username {
+            color: #7aa2f7 !important;
+        }
+        
+        /* 标签云样式 */
+        .tag-cloud .tag-item {
+            transition: all 0.2s ease;
+        }
+        .tag-cloud .tag-item:hover {
+            transform: scale(1.05);
+        }
+        
+        /* 分页样式 */
+        .pagination-btn {
+            transition: all 0.2s ease;
+        }
+        .pagination-btn:hover {
+            background-color: rgba(122, 162, 247, 0.2);
+        }
+        .pagination-btn.active {
+            background-color: #7aa2f7;
+            color: #1a1b26;
+        }
+    </style>
+</head>
+<body class="bg-blog-dark text-blog-text">
+    <div id="app"></div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+
+        // GitHub文章管理器
+        class GitHubArticleManager {
+            constructor(config = {}) {
+                // GitHub仓库配置
+                this.config = {
+                    owner: config.owner || 'YOUR_GITHUB_USERNAME', // 您的GitHub用户名
+                    repo: config.repo || 'blog-articles', // 文章仓库名
+                    branch: config.branch || 'main', // 分支名
+                    articlesPath: config.articlesPath || 'articles', // 文章目录路径
+                    indexFile: config.indexFile || 'articles.json', // 文章索引文件
+                    token: config.token || null, // GitHub访问令牌（可选，用于私有仓库）
+                    ...config
+                };
+                
+                this.articles = [];
+                this.articlesContent = new Map(); // 缓存已加载的文章内容
+                this.isLoading = false;
+                this.lastUpdate = null;
+                
+                // GitHub API基础URL
+                this.apiBase = 'https://api.github.com';
+                this.rawBase = 'https://raw.githubusercontent.com';
+            }
+
+            // 获取请求头
+            getHeaders() {
+                const headers = {
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Blog-App'
+                };
+                
+                if (this.config.token) {
+                    headers['Authorization'] = `token ${this.config.token}`;
+                }
+                
+                return headers;
+            }
+
+            // 初始化，加载文章索引
+            async initialize() {
+                this.isLoading = true;
+                try {
+                    console.log('🔄 正在从GitHub加载文章索引...');
+                    
+                    // 先尝试加载文章索引文件
+                    const indexData = await this.loadArticleIndex();
+                    
+                    if (indexData && indexData.length > 0) {
+                        this.articles = indexData;
+                        console.log(`✅ 成功加载 ${this.articles.length} 篇文章索引`);
+                    } else {
+                        // 如果没有索引文件，尝试自动发现文章
+                        console.log('📂 未找到索引文件，正在自动发现文章...');
+                        await this.discoverArticles();
+                    }
+                    
+                    this.lastUpdate = new Date();
+                    
+                } catch (error) {
+                    console.error('❌ 加载GitHub文章失败:', error);
+                    
+                    // 使用备用数据
+                    console.log('🔄 使用本地备用数据...');
+                    this.articles = this.getFallbackArticles();
+                } finally {
+                    this.isLoading = false;
+                }
+            }
+
+            // 加载文章索引文件
+            async loadArticleIndex() {
+                try {
+                    const url = `${this.rawBase}/${this.config.owner}/${this.config.repo}/${this.config.branch}/${this.config.indexFile}`;
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // 验证数据格式
+                    if (Array.isArray(data)) {
+                        return data.map(article => ({
+                            ...article,
+                            // 确保必要字段存在
+                            id: article.id || Date.now() + Math.random(),
+                            publishTime: article.publishTime || new Date().toISOString().split('T')[0],
+                            readCount: article.readCount || 0,
+                            commentCount: article.commentCount || 0,
+                            likeCount: article.likeCount || 0,
+                            tags: article.tags || [],
+                            category: article.category || '未分类'
+                        }));
+                    }
+                    
+                    return null;
+                } catch (error) {
+                    console.warn('加载文章索引失败:', error.message);
+                    return null;
+                }
+            }
+
+            // 自动发现仓库中的Markdown文件
+            async discoverArticles() {
+                try {
+                    const url = `${this.apiBase}/repos/${this.config.owner}/${this.config.repo}/contents/${this.config.articlesPath}`;
+                    const response = await fetch(url, { headers: this.getHeaders() });
+                    
+                    if (!response.ok) {
+                        throw new Error(`无法访问文章目录: ${response.status}`);
+                    }
+                    
+                    const files = await response.json();
+                    
+                    // 筛选Markdown文件
+                    const markdownFiles = files.filter(file => 
+                        file.type === 'file' && 
+                        (file.name.endsWith('.md') || file.name.endsWith('.markdown'))
+                    );
+                    
+                    // 为每个文件生成基本信息
+                    this.articles = markdownFiles.map((file, index) => {
+                        const fileName = file.name;
+                        const title = fileName.replace(/\.(md|markdown)$/, '')
+                                              .replace(/[-_]/g, ' ')
+                                              .replace(/\b\w/g, l => l.toUpperCase());
+                        
+                        return {
+                            id: index + 1,
+                            title: title,
+                            summary: '点击查看详细内容...',
+                            publishTime: new Date().toISOString().split('T')[0],
+                            readCount: 0,
+                            commentCount: 0,
+                            likeCount: 0,
+                            category: '默认分类',
+                            tags: ['GitHub'],
+                            fileName: fileName,
+                            filePath: file.path,
+                            downloadUrl: file.download_url
+                        };
+                    });
+                    
+                    console.log(`📝 自动发现 ${this.articles.length} 个Markdown文件`);
+                    
+                } catch (error) {
+                    console.error('自动发现文章失败:', error);
+                    throw error;
+                }
+            }
+
+            // 加载指定文章的内容
+            async loadArticleContent(fileName) {
+                // 检查缓存
+                if (this.articlesContent.has(fileName)) {
+                    console.log(`📋 从缓存加载文章: ${fileName}`);
+                    return this.articlesContent.get(fileName);
+                }
+                
+                try {
+                    console.log(`🔄 正在从GitHub加载文章: ${fileName}`);
+                    
+                    // 构建文件URL
+                    const filePath = `${this.config.articlesPath}/${fileName}`;
+                    const url = `${this.rawBase}/${this.config.owner}/${this.config.repo}/${this.config.branch}/${filePath}`;
+                    
+                    const response = await fetch(url);
+                    
+                    if (!response.ok) {
+                        throw new Error(`无法加载文章: ${response.status} ${response.statusText}`);
+                    }
+                    
+                    const content = await response.text();
+                    
+                    // 缓存内容
+                    this.articlesContent.set(fileName, content);
+                    
+                    console.log(`✅ 成功加载文章: ${fileName}`);
+                    return content;
+                    
+                } catch (error) {
+                    console.error(`❌ 加载文章失败 (${fileName}):`, error);
+                    
+                    // 返回错误页面
+                    return this.getErrorContent(fileName, error.message);
+                }
+            }
+
+            // 错误页面内容
+            getErrorContent(fileName, errorMessage) {
+                return `# 文章加载失败
+
+## 错误信息
+无法加载文章: **${fileName}**
+
+**错误详情**: ${errorMessage}
+
+## 可能的原因
+1. 网络连接问题
+2. 文件不存在或路径错误
+3. GitHub仓库访问权限问题
+4. API请求限制
+
+## 解决方案
+1. 检查网络连接
+2. 确认文章文件存在于仓库中
+3. 检查仓库是否为公开仓库
+4. 稍后重试
+
+---
+
+> 💡 **提示**: 如果问题持续存在，请检查控制台中的详细错误信息。`;
+            }
+
+            // 备用文章数据
+            getFallbackArticles() {
+                return [
+                    {
+                        id: 1,
+                        title: "欢迎来到我的博客",
+                        summary: "这是一个使用GitHub仓库管理文章的博客系统，支持Markdown格式文章的动态加载。",
+                        publishTime: "2024-06-24",
+                        readCount: 100,
+                        commentCount: 5,
+                        likeCount: 20,
+                        category: "公告",
+                        tags: ["博客", "GitHub", "Markdown"],
+                        fileName: "welcome.md",
+                        content: `# 欢迎来到我的博客
+
+## 关于这个博客
+
+这是一个基于GitHub仓库的博客系统，具有以下特点：
+
+### ✨ 主要功能
+- 📝 **Markdown支持**: 使用Markdown格式编写文章
+- 🔄 **动态加载**: 文章内容从GitHub仓库实时加载
+- 💬 **评论系统**: 集成Gitalk评论功能
+- 📱 **响应式设计**: 完美适配各种设备
+- 🌙 **暗色主题**: 护眼的暗色界面设计
+
+### 🚀 技术栈
+- **前端**: Vue 3 + Tailwind CSS
+- **文章管理**: GitHub仓库
+- **评论系统**: Gitalk
+- **部署**: GitHub Pages / Vercel
+
+### 📂 如何添加文章
+
+1. 在GitHub仓库的 \`articles\` 目录下创建Markdown文件
+2. 更新 \`articles.json\` 索引文件（可选）
+3. 博客会自动加载新文章
+
+## 开始探索
+
+欢迎浏览我的文章，如果有任何问题或建议，欢迎在评论区留言！`
+                    }
+                ];
+            }
+
+            // 搜索文章
+            searchArticles(query) {
+                if (!query) return this.articles;
+                
+                const lowerQuery = query.toLowerCase();
+                return this.articles.filter(article => 
+                    article.title.toLowerCase().includes(lowerQuery) ||
+                    article.summary.toLowerCase().includes(lowerQuery) ||
+                    article.tags.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
+                    article.category.toLowerCase().includes(lowerQuery)
+                );
+            }
+
+            // 刷新文章列表
+            async refresh() {
+                console.log('🔄 刷新文章列表...');
+                this.articlesContent.clear(); // 清除缓存
+                await this.initialize();
+            }
+
+            // 获取仓库信息
+            async getRepoInfo() {
+                try {
+                    const url = `${this.apiBase}/repos/${this.config.owner}/${this.config.repo}`;
+                    const response = await fetch(url, { headers: this.getHeaders() });
+                    
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                } catch (error) {
+                    console.warn('获取仓库信息失败:', error);
+                }
+                return null;
+            }
+        }
+
+        // 模拟文章数据，支持Markdown内容
+        const articles = [
+            {
+                id: 1,
+                title: "Vue 3 组合式API深度解析",
+                summary: "深入探讨Vue 3组合式API的设计理念、核心概念和最佳实践，帮助开发者更好地理解和使用这个强大的新特性。",
+                publishTime: "2024-08-14",
+                readCount: 1234,
+                commentCount: 12,
+                likeCount: 56,
+                category: "技术分享",
+                tags: ["Vue3", "前端", "JavaScript"],
+                content: `# Vue 3 组合式API深度解析
+
+## 前言
+
+Vue 3 带来了许多令人兴奋的新特性，其中最重要的就是**组合式API**（Composition API）。它为我们提供了一种全新的组织组件逻辑的方式。
+
+## 什么是组合式API？
+
+组合式API是一种基于函数的API，它让我们能够：
+
+- 更好地组织复杂组件的逻辑
+- 在组件之间更容易地共享代码
+- 获得更好的TypeScript支持
+
+### 核心概念
+
+1. **setup()函数**：组合式API的入口点
+2. **响应式引用**：\`ref()\` 和 \`reactive()\`
+3. **计算属性**：\`computed()\`
+4. **生命周期钩子**：\`onMounted()\`、\`onUpdated()\` 等
+
+## 基本示例
+
+\`\`\`javascript
+import { ref, computed, onMounted } from 'vue'
+
+export default {
+  setup() {
+    const count = ref(0)
+    const doubleCount = computed(() => count.value * 2)
+    
+    const increment = () => {
+      count.value++
+    }
+    
+    onMounted(() => {
+      console.log('组件已挂载')
+    })
+    
+    return {
+      count,
+      doubleCount,
+      increment
+    }
+  }
+}
+\`\`\`
+
+## 与选项式API的对比
+
+> 组合式API并不是要取代选项式API，而是为了解决选项式API在处理复杂逻辑时的一些局限性。
+
+### 优势
+
+- **更好的逻辑复用**
+- **更清晰的类型推导**
+- **更灵活的代码组织**
+
+## 总结
+
+组合式API为Vue 3带来了强大的能力，让我们能够编写更加模块化、可维护的代码。`
+            },
+            {
+                id: 2,
+                title: "前端性能优化完全指南",
+                summary: "从网络请求到渲染优化，全面梳理前端性能优化的各个方面，提供实用的优化策略和工具推荐。",
+                publishTime: "2024-08-13",
+                readCount: 892,
+                commentCount: 8,
+                likeCount: 34,
+                category: "技术分享",
+                tags: ["性能优化", "前端", "最佳实践"],
+                content: `# 前端性能优化完全指南
+
+## 性能优化的重要性
+
+在现代Web开发中，性能优化已经成为不可忽视的重要环节。良好的性能不仅能提升用户体验，还能：
+
+- 提高搜索引擎排名
+- 降低服务器成本
+- 增加用户留存率
+
+## 优化策略
+
+### 1. 网络层面优化
+
+- **减少HTTP请求**
+- **启用Gzip压缩**
+- **使用CDN**
+- **预加载关键资源**
+
+### 2. 代码层面优化
+
+- **代码分割**
+- **懒加载**
+- **Tree Shaking**
+- **压缩和混淆**
+
+### 3. 渲染优化
+
+- **虚拟滚动**
+- **防抖和节流**
+- **避免重排重绘**
+
+## 性能监控工具
+
+常用的性能监控工具包括：
+
+1. **Chrome DevTools**
+2. **Lighthouse**
+3. **WebPageTest**
+4. **性能监控平台**
+
+## 结语
+
+性能优化是一个持续的过程，需要在开发的各个阶段都保持关注。`
+            },
+            {
+                id: 3,
+                title: "我的开发者成长历程",
+                summary: "回顾从入门到进阶的开发者成长路径，分享学习经验和踩过的坑，希望能为后来者提供一些参考。",
+                publishTime: "2024-08-12",
+                readCount: 567,
+                commentCount: 15,
+                likeCount: 78,
+                category: "个人随笔",
+                tags: ["成长", "经验分享", "反思"],
+                content: `# 我的开发者成长历程
+
+## 初入编程世界
+
+还记得第一次接触编程时的懵懂和兴奋。那时候的我，对着屏幕上的"Hello World"激动不已。
+
+### 学习的挑战
+
+- **语法障碍**：刚开始总是被各种语法规则搞晕
+- **逻辑思维**：需要培养结构化的思维方式
+- **调试技能**：学会如何定位和解决问题
+
+## 技能的积累
+
+随着时间的推移，技能树逐渐丰富：
+
+1. **前端技术栈**：HTML/CSS/JavaScript
+2. **框架学习**：Vue、React等
+3. **工程化工具**：Webpack、Vite等
+4. **后端知识**：Node.js、数据库等
+
+## 经验总结
+
+> 编程不仅仅是写代码，更是解决问题的艺术。
+
+### 重要的品质
+
+- **持续学习**：技术更新很快，需要保持学习的习惯
+- **问题解决能力**：学会分析和解决复杂问题
+- **团队协作**：现代开发离不开团队合作
+
+## 给新人的建议
+
+如果你也在学习编程的路上，我的建议是：
+
+- 多动手实践
+- 不要害怕犯错
+- 学会阅读文档
+- 积极参与开源项目
+
+## 展望未来
+
+技术的世界永远充满惊喜，让我们一起在这条路上继续前行！`
+            },
+            {
+                id: 4,
+                title: "TypeScript实战技巧分享",
+                summary: "TypeScript已经成为现代前端开发的标配，本文分享一些实用的TypeScript技巧和最佳实践。",
+                publishTime: "2024-08-11",
+                readCount: 445,
+                commentCount: 6,
+                likeCount: 23,
+                category: "技术分享",
+                tags: ["TypeScript", "前端", "类型系统"],
+                content: `# TypeScript实战技巧分享
+
+## TypeScript的价值
+
+TypeScript为JavaScript带来了静态类型检查，让我们能够：
+
+- **提前发现错误**
+- **提供更好的IDE支持**
+- **增强代码可读性**
+- **改善重构体验**
+
+## 实用技巧
+
+### 1. 联合类型和类型守卫
+
+\`\`\`typescript
+type Status = 'loading' | 'success' | 'error'
+
+function handleStatus(status: Status) {
+  switch (status) {
+    case 'loading':
+      // 处理加载状态
+      break
+    case 'success':
+      // 处理成功状态
+      break
+    case 'error':
+      // 处理错误状态
+      break
+  }
+}
+\`\`\`
+
+### 2. 泛型的妙用
+
+泛型让我们能够编写更加灵活和可复用的代码：
+
+\`\`\`typescript
+interface ApiResponse<T> {
+  data: T
+  message: string
+  code: number
+}
+
+async function fetchData<T>(url: string): Promise<ApiResponse<T>> {
+  // API调用逻辑
+}
+\`\`\`
+
+### 3. 实用工具类型
+
+TypeScript内置了许多实用的工具类型：
+
+- \`Partial<T>\`：将所有属性变为可选
+- \`Required<T>\`：将所有属性变为必需
+- \`Pick<T, K>\`：选择特定属性
+- \`Omit<T, K>\`：排除特定属性
+
+## 最佳实践
+
+1. **严格模式**：启用strict模式获得最佳类型检查
+2. **接口优先**：优先使用interface定义对象类型
+3. **避免any**：尽量避免使用any类型
+4. **类型断言谨慎使用**：只在确定类型时使用
+
+## 总结
+
+TypeScript是一个强大的工具，掌握它能够显著提升开发效率和代码质量。`
+            },
+            {
+                id: 5,
+                title: "CSS Grid布局实践指南",
+                summary: "CSS Grid是现代布局的利器，本文通过实例演示Grid布局的强大功能和使用技巧。",
+                publishTime: "2024-08-10",
+                readCount: 338,
+                commentCount: 4,
+                likeCount: 19,
+                category: "技术分享",
+                tags: ["CSS", "布局", "Grid"],
+                content: `# CSS Grid布局实践指南
+
+## Grid布局简介
+
+CSS Grid是二维布局系统，相比Flexbox的一维布局，Grid能够同时处理行和列，提供更强大的布局能力。
+
+## 基本概念
+
+### 网格容器和网格项
+
+- **网格容器**：设置了\`display: grid\`的元素
+- **网格项**：网格容器的直接子元素
+
+### 网格线和网格轨道
+
+- **网格线**：构成网格结构的分界线
+- **网格轨道**：两条相邻网格线之间的空间
+
+## 实用示例
+
+### 1. 基本网格布局
+
+\`\`\`css
+.container {
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  grid-template-rows: auto 1fr auto;
+  gap: 20px;
+  height: 100vh;
+}
+
+.header {
+  grid-column: 1 / -1;
+}
+
+.sidebar {
+  grid-column: 1;
+}
+
+.main {
+  grid-column: 2;
+}
+
+.aside {
+  grid-column: 3;
+}
+
+.footer {
+  grid-column: 1 / -1;
+}
+\`\`\`
+
+### 2. 响应式网格
+
+\`\`\`css
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+\`\`\`
+
+## Grid vs Flexbox
+
+| 特性 | Grid | Flexbox |
+|------|------|---------|
+| 维度 | 二维 | 一维 |
+| 适用场景 | 复杂布局 | 简单对齐 |
+| 浏览器支持 | 较新 | 更好 |
+
+## 总结
+
+CSS Grid为我们提供了前所未有的布局能力，是现代Web开发必须掌握的技能之一。`
+            }
+        ];
+
+        // 导航菜单数据
+        const navItems = [
+            { name: '首页', icon: '🏠', route: 'home' },
+            { name: '文章列表', icon: '📝', route: 'articles' },
+            { name: '分类', icon: '📂', route: 'categories' },
+            { name: '标签', icon: '🏷️', route: 'tags' },
+            { name: '关于我', icon: '👨‍💻', route: 'about' }
+        ];
+
+        // 侧边栏链接数据
+        const sidebarLinks = [
+            { name: '我的随笔', url: '#', count: 5 },
+            { name: '我的评论', url: '#', count: 12 },
+            { name: '我的参与', url: '#', count: 8 },
+            { name: '最新评论', url: '#', count: 3 },
+            { name: '我的标签', url: '#', count: 15 }
+        ];
+
+        const app = createApp({
+            setup() {
+                const currentRoute = ref('home');
+                const selectedArticle = ref(null);
+                const selectedCategory = ref('');
+                const selectedTag = ref('');
+                const isMobileMenuOpen = ref(false);
+                const currentDate = new Date();
+                const currentMonth = ref(currentDate.getMonth());
+                const currentYear = ref(currentDate.getFullYear());
+                
+                // 分页相关
+                const currentPage = ref(1);
+                const pageSize = ref(6);
+                const searchQuery = ref('');
+
+                // 获取所有分类
+                const categories = computed(() => {
+                    const cats = [...new Set(articles.map(article => article.category))];
+                    return cats.map(cat => ({
+                        name: cat,
+                        count: articles.filter(article => article.category === cat).length
+                    }));
+                });
+
+                // 获取所有标签
+                const tags = computed(() => {
+                    const allTags = articles.flatMap(article => article.tags);
+                    const tagCounts = {};
+                    allTags.forEach(tag => {
+                        tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                    });
+                    return Object.entries(tagCounts).map(([name, count]) => ({ name, count }));
+                });
+
+                // 过滤后的文章列表
+                const filteredArticles = computed(() => {
+                    let filtered = articles;
+                    
+                    // 按分类过滤
+                    if (selectedCategory.value) {
+                        filtered = filtered.filter(article => article.category === selectedCategory.value);
+                    }
+                    
+                    // 按标签过滤
+                    if (selectedTag.value) {
+                        filtered = filtered.filter(article => article.tags.includes(selectedTag.value));
+                    }
+                    
+                    // 按搜索关键词过滤
+                    if (searchQuery.value) {
+                        const query = searchQuery.value.toLowerCase();
+                        filtered = filtered.filter(article => 
+                            article.title.toLowerCase().includes(query) ||
+                            article.summary.toLowerCase().includes(query)
+                        );
+                    }
+                    
+                    return filtered;
+                });
+
+                // 分页后的文章列表
+                const paginatedArticles = computed(() => {
+                    const start = (currentPage.value - 1) * pageSize.value;
+                    const end = start + pageSize.value;
+                    return filteredArticles.value.slice(start, end);
+                });
+
+                // 总页数
+                const totalPages = computed(() => {
+                    return Math.ceil(filteredArticles.value.length / pageSize.value);
+                });
+
+                // 切换路由
+                const navigateTo = (route) => {
+                    currentRoute.value = route;
+                    selectedArticle.value = null;
+                    selectedCategory.value = '';
+                    selectedTag.value = '';
+                    isMobileMenuOpen.value = false;
+                    currentPage.value = 1;
+                    searchQuery.value = '';
+                };
+
+                // 查看文章详情
+                const viewArticle = (article) => {
+                    selectedArticle.value = article;
+                    currentRoute.value = 'article-detail';
+                    nextTick(() => {
+                        // 渲染Markdown内容
+                        const contentElement = document.querySelector('.markdown-content');
+                        if (contentElement && article.content) {
+                            contentElement.innerHTML = marked.parse(article.content);
+                        }
+                        initGitalk(article.id);
+                    });
+                };
+
+                // 返回列表
+                const goBack = () => {
+                    selectedArticle.value = null;
+                    if (selectedCategory.value || selectedTag.value) {
+                        currentRoute.value = selectedCategory.value ? 'categories' : 'tags';
+                    } else {
+                        currentRoute.value = 'home';
+                    }
+                };
+
+                // 按分类筛选
+                const filterByCategory = (category) => {
+                    selectedCategory.value = category;
+                    selectedTag.value = '';
+                    currentRoute.value = 'articles';
+                    currentPage.value = 1;
+                };
+
+                // 按标签筛选
+                const filterByTag = (tag) => {
+                    selectedTag.value = tag;
+                    selectedCategory.value = '';
+                    currentRoute.value = 'articles';
+                    currentPage.value = 1;
+                };
+
+                // 清除筛选
+                const clearFilters = () => {
+                    selectedCategory.value = '';
+                    selectedTag.value = '';
+                    searchQuery.value = '';
+                    currentPage.value = 1;
+                };
+
+                // 切换页码
+                const goToPage = (page) => {
+                    currentPage.value = page;
+                };
+
+                // 切换移动端菜单
+                const toggleMobileMenu = () => {
+                    isMobileMenuOpen.value = !isMobileMenuOpen.value;
+                };
+
+                // 农历转换函数（简化版）
+                const lunarCalendar = {
+                    // 农历数据（1900-2100年）- 这里只提供部分数据作为示例
+                    lunarInfo: [
+                        0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,
+                        0x04ae0, 0x0a5b6, 0x0a4d0, 0x0d250, 0x1d255, 0x0b540, 0x0d6a0, 0x0ada2, 0x095b0, 0x14977,
+                        0x04970, 0x0a4b0, 0x0b4b5, 0x06a50, 0x06d40, 0x1ab54, 0x02b60, 0x09570, 0x052f2, 0x04970,
+                        0x06566, 0x0d4a0, 0x0ea50, 0x16a95, 0x05ad0, 0x02b60, 0x186e3, 0x092e0, 0x1c8d7, 0x0c950,
+                        0x0d4a0, 0x1d8a6, 0x0b550, 0x056a0, 0x1a5b4, 0x025d0, 0x092d0, 0x0d2b2, 0x0a950, 0x0b557
+                    ],
+                    
+                    // 天干地支
+                    gan: ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"],
+                    zhi: ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"],
+                    animals: ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"],
+                    
+                    // 农历月份
+                    lunarMonths: ["正", "二", "三", "四", "五", "六", "七", "八", "九", "十", "冬", "腊"],
+                    
+                    // 农历日期
+                    lunarDays: ["初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
+                               "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
+                               "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"],
+                    
+                    // 简化的农历转换（这里使用近似算法）
+                    solar2lunar: function(year, month, day) {
+                        // 这是一个简化版本，实际应用中建议使用专业的农历库
+                        const baseDate = new Date(1900, 0, 31); // 1900年正月初一
+                        const currentDate = new Date(year, month - 1, day);
+                        const daysDiff = Math.floor((currentDate - baseDate) / (24 * 60 * 60 * 1000));
+                        
+                        // 简化计算（实际算法更复杂）
+                        const lunarYear = 1900 + Math.floor(daysDiff / 365);
+                        const lunarMonth = Math.floor((daysDiff % 365) / 30) + 1;
+                        const lunarDay = (daysDiff % 30) + 1;
+                        
+                        // 确保数值在有效范围内
+                        const finalMonth = Math.min(Math.max(lunarMonth, 1), 12);
+                        const finalDay = Math.min(Math.max(lunarDay, 1), 30);
+                        
+                        return {
+                            year: lunarYear,
+                            month: this.lunarMonths[finalMonth - 1] + "月",
+                            day: this.lunarDays[finalDay - 1],
+                            animal: this.animals[(lunarYear - 4) % 12],
+                            ganzhi: this.gan[(lunarYear - 4) % 10] + this.zhi[(lunarYear - 4) % 12]
+                        };
+                    }
+                };
+
+                // 生成日历
+                const generateCalendar = () => {
+                    const year = currentYear.value;
+                    const month = currentMonth.value;
+                    const firstDay = new Date(year, month, 1);
+                    const lastDay = new Date(year, month + 1, 0);
+                    const daysInMonth = lastDay.getDate();
+                    const startingDayOfWeek = firstDay.getDay();
+                    
+                    const calendar = [];
+                    let day = 1;
+                    
+                    for (let week = 0; week < 6; week++) {
+                        const weekDays = [];
+                        for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+                            if (week === 0 && dayOfWeek < startingDayOfWeek) {
+                                weekDays.push(null);
+                            } else if (day > daysInMonth) {
+                                weekDays.push(null);
+                            } else {
+                                // 获取农历信息
+                                const lunarInfo = lunarCalendar.solar2lunar(year, month + 1, day);
+                                weekDays.push({
+                                    day: day,
+                                    lunar: lunarInfo,
+                                    isToday: year === new Date().getFullYear() && 
+                                            month === new Date().getMonth() && 
+                                            day === new Date().getDate()
+                                });
+                                day++;
+                            }
+                        }
+                        calendar.push(weekDays);
+                        if (day > daysInMonth) break;
+                    }
+                    return calendar;
+                };
+
+                // 切换月份
+                const changeMonth = (delta) => {
+                    const newMonth = currentMonth.value + delta;
+                    if (newMonth < 0) {
+                        currentMonth.value = 11;
+                        currentYear.value--;
+                    } else if (newMonth > 11) {
+                        currentMonth.value = 0;
+                        currentYear.value++;
+                    } else {
+                        currentMonth.value = newMonth;
+                    }
+                };
+
+                // 切换年份
+                const changeYear = (delta) => {
+                    currentYear.value += delta;
+                };
+
+                // 回到今天
+                const goToToday = () => {
+                    const today = new Date();
+                    currentYear.value = today.getFullYear();
+                    currentMonth.value = today.getMonth();
+                };
+
+                const calendar = computed(() => generateCalendar());
+                const monthName = computed(() => {
+                    return new Date(currentYear.value, currentMonth.value).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long' });
+                });
+
+                // 初始化 Gitalk
+                const initGitalk = (articleId) => {
+                    setTimeout(() => {
+                        const gitalkContainer = document.getElementById('gitalk-container');
+                        if (gitalkContainer) {
+                            gitalkContainer.innerHTML = '';
+                            
+                            // 注意：这里需要替换为您自己的 GitHub OAuth App 信息
+                            const gitalk = new Gitalk({
+                                clientID: 'YOUR_GITHUB_CLIENT_ID', // 需要替换
+                                clientSecret: 'YOUR_GITHUB_CLIENT_SECRET', // 需要替换
+                                repo: 'YOUR_BLOG_REPO', // 需要替换为您的仓库名
+                                owner: 'YOUR_GITHUB_USERNAME', // 需要替换为您的 GitHub 用户名
+                                admin: ['YOUR_GITHUB_USERNAME'], // 需要替换为您的 GitHub 用户名
+                                id: `article-${articleId}`,
+                                distractionFreeMode: false,
+                                theme: 'dark'
+                            });
+                            gitalk.render('gitalk-container');
+                        }
+                    }, 100);
+                };
+
+                // 监听路由变化，重置分页
+                watch(currentRoute, () => {
+                    currentPage.value = 1;
+                });
+
+                return {
+                    currentRoute,
+                    selectedArticle,
+                    selectedCategory,
+                    selectedTag,
+                    isMobileMenuOpen,
+                    currentPage,
+                    pageSize,
+                    searchQuery,
+                    articles,
+                    filteredArticles,
+                    paginatedArticles,
+                    totalPages,
+                    categories,
+                    tags,
+                    navItems,
+                    sidebarLinks,
+                    calendar,
+                    monthName,
+                    navigateTo,
+                    viewArticle,
+                    goBack,
+                    filterByCategory,
+                    filterByTag,
+                    clearFilters,
+                    goToPage,
+                    toggleMobileMenu,
+                    changeMonth,
+                    changeYear,
+                    goToToday
+                };
+            },
+            template: `
+                <div class="min-h-screen bg-blog-dark">
+                    <!-- 移动端顶部导航 -->
+                    <div class="lg:hidden bg-blog-darker border-b border-blog-border px-4 py-3 flex items-center justify-between">
+                        <h1 class="text-xl font-bold text-blog-accent">LogicYarn</h1>
+                        <button @click="toggleMobileMenu" class="text-blog-text hover:text-blog-accent">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="flex">
+                        <!-- 左侧导航栏 -->
+                        <nav class="hidden lg:block w-64 bg-blog-darker min-h-screen border-r border-blog-border">
+                            <div class="p-6">
+                                <h1 class="text-2xl font-bold text-blog-accent mb-8">LogicYarn</h1>
+                                <ul class="space-y-2">
+                                    <li v-for="item in navItems" :key="item.route">
+                                        <a @click="navigateTo(item.route)" 
+                                           class="nav-item flex items-center space-x-3 px-4 py-3 text-blog-text hover:text-blog-accent cursor-pointer"
+                                           :class="{ 'active': currentRoute === item.route }">
+                                            <span class="text-lg">{{ item.icon }}</span>
+                                            <span>{{ item.name }}</span>
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </nav>
+
+                        <!-- 移动端侧边菜单 -->
+                        <transition name="mobile-menu">
+                            <div v-if="isMobileMenuOpen" class="lg:hidden fixed inset-0 z-50 bg-blog-darker">
+                                <div class="p-6">
+                                    <div class="flex items-center justify-between mb-8">
+                                        <h1 class="text-2xl font-bold text-blog-accent">LogicYarn</h1>
+                                        <button @click="toggleMobileMenu" class="text-blog-text hover:text-blog-accent">
+                                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <ul class="space-y-2">
+                                        <li v-for="item in navItems" :key="item.route">
+                                            <a @click="navigateTo(item.route)" 
+                                               class="nav-item flex items-center space-x-3 px-4 py-3 text-blog-text hover:text-blog-accent cursor-pointer"
+                                               :class="{ 'active': currentRoute === item.route }">
+                                                <span class="text-lg">{{ item.icon }}</span>
+                                                <span>{{ item.name }}</span>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </transition>
+
+                        <!-- 主内容区 -->
+                        <main class="flex-1 lg:max-w-4xl">
+                            <!-- 首页 -->
+                            <div v-if="currentRoute === 'home'">
+                                <!-- 博主信息头部 -->
+                                <div class="relative overflow-hidden">
+                                    <div class="gradient-bg h-48 flex items-center justify-center">
+                                        <div class="text-center text-white">
+                                            <div class="w-20 h-20 bg-white rounded-full mx-auto mb-4 flex items-center justify-center">
+                                                <span class="text-2xl">🐧</span>
+                                            </div>
+                                            <h2 class="text-2xl font-bold mb-2">LogicYarn</h2>
+                                            <p class="text-sm opacity-90">有理想，但不妄想；有希望，但不奢望；有作为，但不妄为。</p>
+                                            <div class="flex justify-center space-x-6 mt-4 text-sm">
+                                                <div>园龄: 10个月</div>
+                                                <div>粉丝: 0</div>
+                                                <div>关注: 4</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 最新文章列表 -->
+                                <div class="p-6">
+                                    <h3 class="text-2xl font-bold text-blog-text mb-6">最新文章</h3>
+                                    
+                                    <!-- 加载状态 -->
+                                    <div v-if="isLoadingArticles" class="space-y-6">
+                                        <div v-for="i in 3" :key="i" class="bg-blog-card rounded-lg p-6 border border-blog-border animate-pulse">
+                                            <div class="h-6 bg-blog-border rounded mb-3"></div>
+                                            <div class="h-4 bg-blog-border rounded mb-2"></div>
+                                            <div class="h-4 bg-blog-border rounded w-3/4"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 文章列表 -->
+                                    <div v-else class="space-y-6">
+                                        <div v-for="article in articles.slice(0, 3)" :key="article.id" 
+                                             class="card-hover bg-blog-card rounded-lg p-6 border border-blog-border cursor-pointer"
+                                             @click="viewArticle(article)">
+                                            <h4 class="text-xl font-semibold text-blog-text mb-3 hover:text-blog-accent transition-colors">
+                                                {{ article.title }}
+                                            </h4>
+                                            <p class="text-gray-400 mb-4 line-clamp-2">{{ article.summary }}</p>
+                                            <div class="flex items-center justify-between text-sm text-gray-500">
+                                                <div class="flex items-center space-x-4">
+                                                    <span>📅 {{ article.publishTime }}</span>
+                                                    <span class="px-2 py-1 bg-blog-accent bg-opacity-20 text-blog-accent rounded">
+                                                        {{ article.category }}
+                                                    </span>
+                                                </div>
+                                                <div class="flex items-center space-x-4">
+                                                    <span>👁️ {{ article.readCount }}</span>
+                                                    <span>💬 {{ article.commentCount }}</span>
+                                                    <span>❤️ {{ article.likeCount }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="text-center mt-8">
+                                        <button @click="navigateTo('articles')" 
+                                                :disabled="isLoadingArticles"
+                                                class="px-6 py-3 bg-blog-accent text-white rounded-lg hover:bg-opacity-80 transition-colors disabled:opacity-50">
+                                            查看所有文章
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 文章列表页 -->
+                            <div v-if="currentRoute === 'articles'">
+                                <div class="p-6">
+                                    <div class="flex items-center justify-between mb-6">
+                                        <h2 class="text-2xl font-bold text-blog-text">
+                                            文章列表
+                                            <span v-if="selectedCategory" class="text-blog-accent">- {{ selectedCategory }}</span>
+                                            <span v-if="selectedTag" class="text-blog-accent">- #{{ selectedTag }}</span>
+                                        </h2>
+                                        <div class="flex items-center space-x-4">
+                                            <!-- 搜索框 -->
+                                            <div class="relative">
+                                                <input v-model="searchQuery" 
+                                                       type="text" 
+                                                       placeholder="搜索文章..."
+                                                       class="bg-blog-card border border-blog-border rounded-lg px-4 py-2 text-blog-text placeholder-gray-400 focus:outline-none focus:border-blog-accent">
+                                                <svg class="absolute right-3 top-2.5 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                                </svg>
+                                            </div>
+                                            <!-- 清除筛选按钮 -->
+                                            <button v-if="selectedCategory || selectedTag || searchQuery" 
+                                                    @click="clearFilters"
+                                                    class="px-4 py-2 bg-blog-secondary text-white rounded-lg hover:bg-opacity-80 transition-colors">
+                                                清除筛选
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- 文章网格 -->
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                        <div v-for="article in paginatedArticles" :key="article.id" 
+                                             class="card-hover bg-blog-card rounded-lg p-6 border border-blog-border cursor-pointer"
+                                             @click="viewArticle(article)">
+                                            <h3 class="text-xl font-semibold text-blog-text mb-3 hover:text-blog-accent transition-colors">
+                                                {{ article.title }}
+                                            </h3>
+                                            <p class="text-gray-400 mb-4 line-clamp-3">{{ article.summary }}</p>
+                                            <div class="flex items-center justify-between text-sm text-gray-500">
+                                                <div class="flex items-center space-x-4">
+                                                    <span>📅 {{ article.publishTime }}</span>
+                                                    <span class="px-2 py-1 bg-blog-accent bg-opacity-20 text-blog-accent rounded">
+                                                        {{ article.category }}
+                                                    </span>
+                                                </div>
+                                                <div class="flex items-center space-x-4">
+                                                    <span>👁️ {{ article.readCount }}</span>
+                                                    <span>💬 {{ article.commentCount }}</span>
+                                                    <span>❤️ {{ article.likeCount }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 mt-4">
+                                                <span v-for="tag in article.tags" :key="tag"
+                                                      class="px-2 py-1 bg-blog-secondary bg-opacity-20 text-blog-secondary rounded text-xs">
+                                                    #{{ tag }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 分页 -->
+                                    <div v-if="totalPages > 1" class="flex items-center justify-center space-x-2">
+                                        <button @click="goToPage(currentPage - 1)" 
+                                                :disabled="currentPage === 1"
+                                                class="pagination-btn px-3 py-2 rounded-lg border border-blog-border text-blog-text disabled:opacity-50 disabled:cursor-not-allowed">
+                                            上一页
+                                        </button>
+                                        <button v-for="page in totalPages" :key="page"
+                                                @click="goToPage(page)"
+                                                class="pagination-btn px-3 py-2 rounded-lg border border-blog-border text-blog-text"
+                                                :class="{ 'active': currentPage === page }">
+                                            {{ page }}
+                                        </button>
+                                        <button @click="goToPage(currentPage + 1)" 
+                                                :disabled="currentPage === totalPages"
+                                                class="pagination-btn px-3 py-2 rounded-lg border border-blog-border text-blog-text disabled:opacity-50 disabled:cursor-not-allowed">
+                                            下一页
+                                        </button>
+                                    </div>
+
+                                    <!-- 无搜索结果 -->
+                                    <div v-if="filteredArticles.length === 0" class="text-center py-12">
+                                        <div class="text-6xl mb-4">🔍</div>
+                                        <h3 class="text-xl font-semibold text-blog-text mb-2">没有找到相关文章</h3>
+                                        <p class="text-gray-400">尝试调整搜索关键词或清除筛选条件</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 分类页面 -->
+                            <div v-if="currentRoute === 'categories'" class="p-6">
+                                <h2 class="text-2xl font-bold text-blog-text mb-6">文章分类</h2>
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div v-for="category in categories" :key="category.name"
+                                         @click="filterByCategory(category.name)"
+                                         class="card-hover bg-blog-card rounded-lg p-6 border border-blog-border cursor-pointer text-center">
+                                        <div class="text-3xl mb-3">📂</div>
+                                        <h3 class="text-lg font-semibold text-blog-text mb-2">{{ category.name }}</h3>
+                                        <p class="text-gray-400">{{ category.count }} 篇文章</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 标签页面 -->
+                            <div v-if="currentRoute === 'tags'" class="p-6">
+                                <h2 class="text-2xl font-bold text-blog-text mb-6">标签云</h2>
+                                <div class="tag-cloud flex flex-wrap gap-3">
+                                    <span v-for="tag in tags" :key="tag.name"
+                                          @click="filterByTag(tag.name)"
+                                          class="tag-item px-4 py-2 bg-blog-card border border-blog-border rounded-lg cursor-pointer hover:border-blog-accent transition-colors"
+                                          :style="{ fontSize: Math.min(16 + tag.count * 2, 24) + 'px' }">
+                                        <span class="text-blog-accent">#{{ tag.name }}</span>
+                                        <span class="text-gray-400 ml-2">({{ tag.count }})</span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 关于我页面 -->
+                            <div v-if="currentRoute === 'about'" class="p-6">
+                                <div class="bg-blog-card rounded-lg p-8 border border-blog-border">
+                                    <div class="text-center mb-8">
+                                        <div class="w-24 h-24 bg-blog-accent rounded-full mx-auto mb-4 flex items-center justify-center">
+                                            <span class="text-3xl">🐧</span>
+                                        </div>
+                                        <h2 class="text-2xl font-bold text-blog-text mb-2">LogicYarn</h2>
+                                        <p class="text-gray-400">全栈开发者 · 技术爱好者</p>
+                                    </div>
+                                    
+                                    <div class="markdown-content">
+                                        <h2>关于我</h2>
+                                        <p>大家好，我是LogicYarn，一名热爱技术的全栈开发者。</p>
+                                        
+                                        <h3>技能栈</h3>
+                                        <ul>
+                                            <li><strong>前端</strong>：Vue.js、React、TypeScript、CSS</li>
+                                            <li><strong>后端</strong>：Node.js、Python、Java</li>
+                                            <li><strong>数据库</strong>：MySQL、MongoDB、Redis</li>
+                                            <li><strong>工具</strong>：Git、Docker、Webpack</li>
+                                        </ul>
+                                        
+                                        <h3>兴趣爱好</h3>
+                                        <p>除了编程，我还喜欢：</p>
+                                        <ul>
+                                            <li>阅读技术博客和书籍</li>
+                                            <li>参与开源项目</li>
+                                            <li>学习新技术和框架</li>
+                                            <li>分享技术心得</li>
+                                        </ul>
+                                        
+                                        <h3>联系方式</h3>
+                                        <p>如果你想与我交流技术或合作，欢迎通过以下方式联系我：</p>
+                                        <ul>
+                                            <li>GitHub: <a href="#" class="text-blog-accent">@logicyarn</a></li>
+                                            <li>邮箱: <a href="#" class="text-blog-accent">contact@logicyarn.com</a></li>
+                                            <li>微信: logicyarn</li>
+                                        </ul>
+                                        
+                                        <blockquote>
+                                            <p>有理想，但不妄想；有希望，但不奢望；有作为，但不妄为。</p>
+                                        </blockquote>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 文章详情页 -->
+                            <div v-if="currentRoute === 'article-detail' && selectedArticle" class="p-6">
+                                <button @click="goBack" class="mb-6 flex items-center text-blog-accent hover:text-blog-secondary">
+                                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                                    </svg>
+                                    返回列表
+                                </button>
+                                
+                                <article class="bg-blog-card rounded-lg p-8 border border-blog-border">
+                                    <header class="mb-8">
+                                        <h1 class="text-3xl font-bold text-blog-text mb-4">{{ selectedArticle.title }}</h1>
+                                        <div class="flex items-center space-x-4 text-sm text-gray-400 mb-4">
+                                            <span>📅 {{ selectedArticle.publishTime }}</span>
+                                            <span>👁️ {{ selectedArticle.readCount }}</span>
+                                            <span>💬 {{ selectedArticle.commentCount }}</span>
+                                            <span>❤️ {{ selectedArticle.likeCount }}</span>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            <span class="px-3 py-1 bg-blog-accent bg-opacity-20 text-blog-accent rounded-full text-sm">
+                                                {{ selectedArticle.category }}
+                                            </span>
+                                            <span v-for="tag in selectedArticle.tags" :key="tag"
+                                                  class="px-3 py-1 bg-blog-secondary bg-opacity-20 text-blog-secondary rounded-full text-sm">
+                                                #{{ tag }}
+                                            </span>
+                                        </div>
+                                    </header>
+                                    
+                                    <div class="markdown-content"></div>
+                                </article>
+
+                                <!-- Gitalk 评论区 -->
+                                <div class="mt-8 bg-blog-card rounded-lg p-6 border border-blog-border">
+                                    <h3 class="text-xl font-semibold text-blog-text mb-4">评论区</h3>
+                                    <div id="gitalk-container"></div>
+                                </div>
+                            </div>
+                        </main>
+
+                        <!-- 右侧辅助栏 -->
+                        <aside class="hidden xl:block w-80 bg-blog-darker min-h-screen border-l border-blog-border p-6">
+                            <!-- 日历模块 -->
+                            <div class="bg-blog-card rounded-lg p-4 border border-blog-border mb-6">
+                                <!-- 日历头部控制 -->
+                                <div class="calendar-controls flex items-center justify-between mb-4">
+                                    <div class="flex items-center space-x-2">
+                                        <button @click="changeYear(-1)" 
+                                                class="w-8 h-8 rounded-full bg-blog-border hover:bg-blog-accent hover:text-white transition-colors flex items-center justify-center">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7"></path>
+                                            </svg>
+                                        </button>
+                                        <button @click="changeMonth(-1)" 
+                                                class="w-8 h-8 rounded-full bg-blog-border hover:bg-blog-accent hover:text-white transition-colors flex items-center justify-center">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="text-center">
+                                        <h3 class="text-lg font-semibold text-blog-text">{{ monthName }}</h3>
+                                    </div>
+                                    
+                                    <div class="flex items-center space-x-2">
+                                        <button @click="changeMonth(1)" 
+                                                class="w-8 h-8 rounded-full bg-blog-border hover:bg-blog-accent hover:text-white transition-colors flex items-center justify-center">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                            </svg>
+                                        </button>
+                                        <button @click="changeYear(1)" 
+                                                class="w-8 h-8 rounded-full bg-blog-border hover:bg-blog-accent hover:text-white transition-colors flex items-center justify-center">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- 回到今天按钮 -->
+                                <div class="text-center mb-4">
+                                    <button @click="goToToday" 
+                                            class="px-3 py-1 text-xs bg-blog-accent bg-opacity-20 text-blog-accent rounded hover:bg-opacity-30 transition-colors">
+                                        回到今天
+                                    </button>
+                                </div>
+                                
+                                <!-- 日历网格 -->
+                                <div class="grid grid-cols-7 gap-1 text-center text-sm">
+                                    <div v-for="dayName in ['日', '一', '二', '三', '四', '五', '六']" :key="dayName" 
+                                         class="text-gray-400 font-medium p-2 text-xs">
+                                        {{ dayName }}
+                                    </div>
+                                    <template v-for="week in calendar" :key="week">
+                                        <div v-for="dayObj in week" :key="dayObj ? dayObj.day : 'empty'" 
+                                             class="calendar-day relative p-2 rounded cursor-pointer text-xs"
+                                             :class="{ 
+                                                 'today text-white': dayObj && dayObj.isToday,
+                                                 'text-blog-text hover:text-blog-accent': dayObj && !dayObj.isToday,
+                                                 'text-transparent': !dayObj
+                                             }">
+                                            <div v-if="dayObj">
+                                                <div class="font-medium">{{ dayObj.day }}</div>
+                                                <!-- 农历提示框 -->
+                                                <div class="lunar-tooltip">
+                                                    <div class="text-blog-accent font-medium">农历 {{ dayObj.lunar.month }}{{ dayObj.lunar.day }}</div>
+                                                    <div class="text-gray-400 mt-1">{{ dayObj.lunar.ganzhi }}年 {{ dayObj.lunar.animal }}年</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                                
+                                <!-- 农历年份信息 -->
+                                <div class="mt-4 pt-4 border-t border-blog-border text-center">
+                                    <div class="text-xs text-gray-400">
+                                        {{ calendar[2] && calendar[2][3] && calendar[2][3].lunar ? 
+                                           calendar[2][3].lunar.ganzhi + '年 (' + calendar[2][3].lunar.animal + '年)' : 
+                                           currentYear + '年' }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 热门标签 -->
+                            <div class="bg-blog-card rounded-lg p-4 border border-blog-border mb-6">
+                                <h3 class="text-lg font-semibold text-blog-text mb-4">热门标签</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    <span v-for="tag in tags.slice(0, 10)" :key="tag.name"
+                                          @click="filterByTag(tag.name)"
+                                          class="px-2 py-1 bg-blog-accent bg-opacity-20 text-blog-accent rounded text-sm cursor-pointer hover:bg-opacity-30 transition-colors">
+                                        #{{ tag.name }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- 快捷链接 -->
+                            <div class="bg-blog-card rounded-lg p-4 border border-blog-border">
+                                <h3 class="text-lg font-semibold text-blog-text mb-4">常用链接</h3>
+                                <ul class="space-y-2">
+                                    <li v-for="link in sidebarLinks" :key="link.name" class="flex items-center justify-between">
+                                        <a :href="link.url" class="text-blog-accent hover:text-blog-secondary transition-colors">
+                                            {{ link.name }}
+                                        </a>
+                                        <span class="text-xs text-gray-400 bg-blog-border px-2 py-1 rounded">
+                                            {{ link.count }}
+                                        </span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+            `
+        });
+
+        app.mount('#app');
+    </script>
+</body>
+</html>
